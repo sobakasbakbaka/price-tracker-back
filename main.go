@@ -23,14 +23,23 @@ func main() {
 	})
 
 	app.Get("/parse", func(c *fiber.Ctx) error {
-		url := "https://indexiq.ru/catalog/iphone-15-pro-max/"
-	
-		products, err := parser.ScrapeProducts(url)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		shops := map[string]string{
+			"indexiq": "https://indexiq.ru/catalog/iphone-15-pro-max/",
+			"biggeek": "https://biggeek.ru/catalog/apple-iphone-15-pro-max",
 		}
+
+		var allProducts []parser.Product
 	
-		return c.JSON(products)
+		for site, url := range shops {
+			products, err := parser.ScrapeProducts(url, site)
+			if err != nil {
+				log.Println("Error parsing:", site, err)
+				continue
+			}
+			allProducts = append(allProducts, products...)
+		}
+
+		return c.JSON(allProducts)
 	})
 	
 

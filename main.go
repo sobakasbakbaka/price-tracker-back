@@ -54,12 +54,18 @@ func initRedis() {
 }
 
 func initMongo() {
-	var err error
-	mongoClient, err = mongo.Connect(context.Background(), options.Client().ApplyURI("mongodb://localhost:27017"))
-	if err != nil {
-		log.Fatal("Failed to connect to MongoDB:", err)
-	}
-	productsCollection = mongoClient.Database("price_tracker").Collection("products")
+    mongoURI := os.Getenv("MONGO_URL")
+    if mongoURI == "" {
+ 	   log.Fatal("MONGO_URL environment variable is not set")
+    }
+
+    var err error
+    mongoClient, err = mongo.Connect(context.Background(), options.Client().ApplyURI(mongoURI))
+    if err != nil {
+ 	   log.Fatal("Failed to connect to MongoDB:", err)
+    }
+    productsCollection = mongoClient.Database("price_tracker").Collection("products")
+    log.Println("Connected to MongoDB!")
 }
 
 func filterAndSortProducts(products []parser.Product, c *fiber.Ctx) []parser.Product {

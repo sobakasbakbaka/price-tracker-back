@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -25,21 +26,31 @@ var mongoClient *mongo.Client
 var productsCollection *mongo.Collection
 
 func initRedis() {
-    redisURL := os.Getenv("REDIS_URL")
-    if redisURL == "" {
-        log.Fatal("REDIS_URL environment variable is not set")
-    }
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		log.Fatal("REDIS_URL environment variable is not set")
+	}
 
-    redisClient = redis.NewClient(&redis.Options{
-        Addr: redisURL,
-    })
+	u, err := url.Parse(redisURL)
+	if err != nil {
+		log.Fatal("Failed to parse REDIS_URL: ", err)
+	}
 
-    _, err := redisClient.Ping(context.Background()).Result()
-    if err != nil {
-        log.Fatal("Failed to connect to Redis: ", err)
-    }
+	host := u.Hostname()
+	port := u.Port()
+	password, _ := u.User.Password()
 
-    log.Println("Connected to Redis!")
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     host + ":" + port,
+		Password: password,
+	})
+
+	_, err = redisClient.Ping(context.Background()).Result()
+	if err != nil {
+		log.Fatal("Failed to connect to Redis: ", err)
+	}
+
+	log.Println("Connected to Redis!")
 }
 
 func initMongo() {

@@ -25,10 +25,21 @@ var mongoClient *mongo.Client
 var productsCollection *mongo.Collection
 
 func initRedis() {
-	redisClient = redis.NewClient(&redis.Options{
-		Addr: "redis:6379",
-		DB:   0,
-	})
+    redisURL := os.Getenv("REDIS_URL")
+    if redisURL == "" {
+        log.Fatal("REDIS_URL environment variable is not set")
+    }
+
+    redisClient = redis.NewClient(&redis.Options{
+        Addr: redisURL,
+    })
+
+    _, err := redisClient.Ping(context.Background()).Result()
+    if err != nil {
+        log.Fatal("Failed to connect to Redis: ", err)
+    }
+
+    log.Println("Connected to Redis!")
 }
 
 func initMongo() {

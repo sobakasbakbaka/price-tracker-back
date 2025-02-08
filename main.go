@@ -26,19 +26,20 @@ func main() {
 		shops := map[string]string{
 			"indexiq": "https://indexiq.ru/catalog/iphone-15-pro-max/",
 			"biggeek": "https://biggeek.ru/catalog/apple-iphone-15-pro-max",
+			"store77": "https://store77.net/apple_iphone_15_pro_max_2/",
 		}
-
+	
 		var allProducts []parser.Product
 	
 		for site, url := range shops {
 			products, err := parser.ScrapeProducts(url, site)
 			if err != nil {
-				log.Println("Error parsing:", site, err)
+				log.Println("Parsing error:", site, err)
 				continue
 			}
 			allProducts = append(allProducts, products...)
 		}
-
+	
 		return c.JSON(allProducts)
 	})
 	

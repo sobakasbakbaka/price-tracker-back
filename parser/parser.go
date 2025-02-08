@@ -24,37 +24,22 @@ func CleanPrice(price string) string {
 }
 
 func ScrapeProducts(url string, site string) ([]Product, error) {
+	config, exists := SiteConfigs[site]
+	if !exists {
+		log.Println("Unknown site:", site)
+		return nil, nil
+	}
+
 	c := colly.NewCollector()
 	var products []Product
 
-	switch site {
-		case "indexiq":
-			c.OnHTML(".product-item", func(e *colly.HTMLElement) {
-				name := e.ChildText(".product-item__link")
-				price := e.ChildText(".product-item__price-visible")
-				price = CleanPrice(price)
-		
-				if name != "" && price != "" {
-					products = append(products, Product{Name: name, Price: price, Source: "indexiq"})
-				}
-			})
-		case "biggeek":
-			c.OnHTML(".catalog-card", func(e *colly.HTMLElement) {
-				name := e.ChildText(".catalog-card__title")
-				price := e.ChildText(".cart-modal-count")
-				price = CleanPrice(price)
-		
-				if name != "" && price != "" {
-					products = append(products, Product{Name: name, Price: price, Source: "biggeek"})
-				}
-			})
-		default:
-			log.Println("Unknown site")
-			return nil, nil
-	}
+	c.OnHTML(config.ItemSelector, func(e *colly.HTMLElement) {
+		name := e.ChildText(config.TitleSelector)
+		price := CleanPrice(e.ChildText(config.PriceSelector))
 
-	c.OnError(func(_ *colly.Response, err error) {
-		log.Println("Ошибка парсинга:", err)
+		if name != "" && price != "" {
+			products = append(products, Product{Name: name, Price: price, Source: config.Source})
+		}
 	})
 
 	err := c.Visit(url)

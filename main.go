@@ -26,23 +26,17 @@ var productsCollection *mongo.Collection
 
 func initRedis() {
 	redisClient = redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: "redis:6379",
 		DB:   0,
 	})
 }
 
 func initMongo() {
-	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
-	if err != nil {
-		log.Fatal("Failed to create MongoDB client:", err)
-	}
-
-	err = client.Connect(context.Background())
+	var err error
+	mongoClient, err = mongo.Connect(context.Background(), options.Client().ApplyURI("mongodb://localhost:27017"))
 	if err != nil {
 		log.Fatal("Failed to connect to MongoDB:", err)
 	}
-
-	mongoClient = client
 	productsCollection = mongoClient.Database("price_tracker").Collection("products")
 }
 
@@ -94,20 +88,19 @@ func filterAndSortProducts(products []parser.Product, c *fiber.Ctx) []parser.Pro
 	return filtered
 }
 
-func saveProductsToMongo(products []parser.Product) {
+func insertProductsIntoMongo(products []parser.Product) error {
 	var bsonProducts []interface{}
-	for _, p := range products {
-		bsonProducts = append(bsonProducts, bson.M{
-			"name":   p.Name,
-			"price":  p.Price,
-			"source": p.Source,
-		})
+	for _, product := range products {
+		bsonProduct := bson.D{
+			{"name", product.Name},
+			{"price", product.Price},
+			{"source", product.Source},
+		}
+		bsonProducts = append(bsonProducts, bsonProduct)
 	}
 
 	_, err := productsCollection.InsertMany(context.Background(), bsonProducts)
-	if err != nil {
-		log.Println("Error inserting products into MongoDB:", err)
-	}
+	return err
 }
 
 func main() {
@@ -130,9 +123,12 @@ func main() {
 		if err == nil {
 			var cachedProducts []parser.Product
 			if err := json.Unmarshal([]byte(cachedData), &cachedProducts); err == nil {
+				log.Println("Cache hit! Returning cached products.")
 				return c.JSON(filterAndSortProducts(cachedProducts, c))
 			}
 		}
+
+		log.Println("Cache miss! Parsing new products.")
 
 		shops := map[string]string{
 			"indexiq": "https://indexiq.ru/catalog/iphone/",
@@ -151,10 +147,15 @@ func main() {
 			allProducts = append(allProducts, products...)
 		}
 
-		saveProductsToMongo(allProducts)
-
 		productsJSON, _ := json.Marshal(allProducts)
 		redisClient.Set(context.Background(), "cached_products", productsJSON, 10*time.Minute)
+
+		err = insertProductsIntoMongo(allProducts)
+		if err != nil {
+			log.Println("Error inserting products into MongoDB:", err)
+		} else {
+			log.Println("Successfully inserted products into MongoDB.")
+		}
 
 		return c.JSON(filterAndSortProducts(allProducts, c))
 	})

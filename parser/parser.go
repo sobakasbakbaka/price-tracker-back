@@ -23,7 +23,7 @@ func CleanPrice(price string) string {
 	return price
 }
 
-func ScrapeProducts(url string, site string) ([]Product, error) {
+func ScrapeProducts(baseURL string, site string) ([]Product, error) {
 	config, exists := SiteConfigs[site]
 	if !exists {
 		log.Println("Unknown site:", site)
@@ -33,19 +33,36 @@ func ScrapeProducts(url string, site string) ([]Product, error) {
 	c := colly.NewCollector()
 	var products []Product
 
-	c.OnHTML(config.ItemSelector, func(e *colly.HTMLElement) {
-		name := e.ChildText(config.TitleSelector)
-		price := CleanPrice(e.ChildText(config.PriceSelector))
+	// Рекурсивный вызов для сбора всех страниц
+	var scrapePage func(string)
+	scrapePage = func(url string) {
+		c.OnHTML(config.ItemSelector, func(e *colly.HTMLElement) {
+			name := e.ChildText(config.TitleSelector)
+			price := CleanPrice(e.ChildText(config.PriceSelector))
 
-		if name != "" && price != "" {
-			products = append(products, Product{Name: name, Price: price, Source: config.Source})
+			if name != "" && price != "" {
+				products = append(products, Product{Name: name, Price: price, Source: config.Source})
+			}
+		})
+
+		// Пагинация: ищем ссылку "Следующая страница"
+		c.OnHTML(config.NextPageSelector, func(e *colly.HTMLElement) {
+			nextPage := e.Attr("href")
+			if nextPage != "" {
+				nextURL := e.Request.AbsoluteURL(nextPage)
+				log.Println("Переход на страницу:", nextURL)
+				scrapePage(nextURL) // Рекурсивно парсим следующую страницу
+			}
+		})
+
+		err := c.Visit(url)
+		if err != nil {
+			log.Println("Ошибка при посещении страницы:", err)
 		}
-	})
-
-	err := c.Visit(url)
-	if err != nil {
-		return nil, err
 	}
+
+	// Запускаем парсинг с первой страницы
+	scrapePage(baseURL)
 
 	return products, nil
 }

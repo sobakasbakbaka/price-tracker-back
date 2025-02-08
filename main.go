@@ -1,17 +1,30 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"price-tracker/parser"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
+
+var redisClient *redis.Client
+
+func initRedis() {
+	redisClient = redis.NewClient(&redis.Options{
+		Addr: "localhost:6379", 
+		DB:   0,                
+	})
+}
 
 func filterAndSortProducts(products []parser.Product, c *fiber.Ctx) []parser.Product {
 	searchQuery := strings.ToLower(c.Query("search"))
@@ -68,6 +81,8 @@ func main() {
 		log.Println("Error loading .env file")
 	}
 
+	initRedis()
+
 	app := fiber.New()
 
 	app.Get("/", func(c *fiber.Ctx) error {
@@ -75,27 +90,36 @@ func main() {
 	})
 
 	app.Get("/parse", func(c *fiber.Ctx) error {
+		cachedData, err := redisClient.Get(context.Background(), "cached_products").Result()
+		if err == nil {
+			var cachedProducts []parser.Product
+			if err := json.Unmarshal([]byte(cachedData), &cachedProducts); err == nil {
+				return c.JSON(filterAndSortProducts(cachedProducts, c))
+			}
+		}
+	
 		shops := map[string]string{
 			"indexiq": "https://indexiq.ru/catalog/iphone/",
 			"biggeek": "https://biggeek.ru/catalog/apple-iphone",
+			"store77": "https://store77.net/telefony_apple/",
 		}
-
+	
 		var allProducts []parser.Product
-
+	
 		for site, url := range shops {
 			products, err := parser.ScrapeProducts(url, site)
 			if err != nil {
-				log.Println("Error scraping site:", site)
+				log.Println("Parsing error:", site)
 				continue
 			}
 			allProducts = append(allProducts, products...)
 		}
-
-		filteredProducts := filterAndSortProducts(allProducts, c)
-
-		return c.JSON(filteredProducts)
-	})
 	
+		productsJSON, _ := json.Marshal(allProducts)
+		redisClient.Set(context.Background(), "cached_products", productsJSON, 10*time.Minute)
+	
+		return c.JSON(filterAndSortProducts(allProducts, c))
+	})	
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -105,8 +129,4 @@ func main() {
 	log.Fatal(app.Listen(":" + port))
 }
 
-// shops := map[string]string{
-// 	"indexiq": "https://indexiq.ru/catalog/iphone-15-pro-max/",
-// 	"biggeek": "https://biggeek.ru/catalog/apple-iphone-15-pro-max",
-// 	"store77": "https://store77.net/apple_iphone_15_pro_max_2/",
-// }
+

@@ -117,18 +117,24 @@ func filterAndSortProducts(products []parser.Product, c *fiber.Ctx) []parser.Pro
 }
 
 func insertProductsIntoMongo(products []parser.Product) error {
-	var bsonProducts []interface{}
-	for _, product := range products {
-		bsonProduct := bson.D{
-			{"name", product.Name},
-			{"price", product.Price},
-			{"source", product.Source},
-		}
-		bsonProducts = append(bsonProducts, bsonProduct)
-	}
+    var bsonProducts []interface{}
+    for _, product := range products {
+        bsonProduct := bson.D{
+            {"name", product.Name},
+            {"price", product.Price},
+            {"source", product.Source},
+        }
+        bsonProducts = append(bsonProducts, bsonProduct)
+    }
 
-	_, err := productsCollection.InsertMany(context.Background(), bsonProducts)
-	return err
+    result, err := productsCollection.InsertMany(context.Background(), bsonProducts)
+    if err != nil {
+        log.Println("Error inserting products into MongoDB:", err)
+        return err
+    }
+
+    log.Printf("Inserted %d products into MongoDB", len(result.InsertedIDs))
+    return nil
 }
 
 func main() {

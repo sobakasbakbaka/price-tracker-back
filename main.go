@@ -182,7 +182,7 @@ func main() {
 		}
 
 		productsJSON, _ := json.Marshal(allProducts)
-		redisClient.Set(context.Background(), "cached_products", productsJSON, 10*time.Minute)
+		redisClient.Set(context.Background(), "cached_products", productsJSON, 24*time.Hour)
 
 		err = insertProductsIntoMongo(allProducts)
 		if err != nil {

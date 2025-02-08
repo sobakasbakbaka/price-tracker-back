@@ -15,15 +15,35 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var redisClient *redis.Client
+var mongoClient *mongo.Client
+var productsCollection *mongo.Collection
 
 func initRedis() {
 	redisClient = redis.NewClient(&redis.Options{
-		Addr: "localhost:6379", 
-		DB:   0,                
+		Addr: "localhost:6379",
+		DB:   0,
 	})
+}
+
+func initMongo() {
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb://localhost:27017"))
+	if err != nil {
+		log.Fatal("Failed to create MongoDB client:", err)
+	}
+
+	err = client.Connect(context.Background())
+	if err != nil {
+		log.Fatal("Failed to connect to MongoDB:", err)
+	}
+
+	mongoClient = client
+	productsCollection = mongoClient.Database("price_tracker").Collection("products")
 }
 
 func filterAndSortProducts(products []parser.Product, c *fiber.Ctx) []parser.Product {
@@ -74,6 +94,21 @@ func filterAndSortProducts(products []parser.Product, c *fiber.Ctx) []parser.Pro
 	return filtered
 }
 
+func saveProductsToMongo(products []parser.Product) {
+	var bsonProducts []interface{}
+	for _, p := range products {
+		bsonProducts = append(bsonProducts, bson.M{
+			"name":   p.Name,
+			"price":  p.Price,
+			"source": p.Source,
+		})
+	}
+
+	_, err := productsCollection.InsertMany(context.Background(), bsonProducts)
+	if err != nil {
+		log.Println("Error inserting products into MongoDB:", err)
+	}
+}
 
 func main() {
 	err := godotenv.Load()
@@ -82,11 +117,12 @@ func main() {
 	}
 
 	initRedis()
+	initMongo()
 
 	app := fiber.New()
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"message": "Server is worked!"})
+		return c.JSON(fiber.Map{"message": "Server is working!"})
 	})
 
 	app.Get("/parse", func(c *fiber.Ctx) error {
@@ -97,15 +133,15 @@ func main() {
 				return c.JSON(filterAndSortProducts(cachedProducts, c))
 			}
 		}
-	
+
 		shops := map[string]string{
 			"indexiq": "https://indexiq.ru/catalog/iphone/",
 			"biggeek": "https://biggeek.ru/catalog/apple-iphone",
 			"store77": "https://store77.net/telefony_apple/",
 		}
-	
+
 		var allProducts []parser.Product
-	
+
 		for site, url := range shops {
 			products, err := parser.ScrapeProducts(url, site)
 			if err != nil {
@@ -114,12 +150,14 @@ func main() {
 			}
 			allProducts = append(allProducts, products...)
 		}
-	
+
+		saveProductsToMongo(allProducts)
+
 		productsJSON, _ := json.Marshal(allProducts)
 		redisClient.Set(context.Background(), "cached_products", productsJSON, 10*time.Minute)
-	
+
 		return c.JSON(filterAndSortProducts(allProducts, c))
-	})	
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -128,5 +166,3 @@ func main() {
 
 	log.Fatal(app.Listen(":" + port))
 }
-
-
